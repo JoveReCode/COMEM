@@ -23,8 +23,7 @@ def parse_args():
 device = 'cuda'
 
 # model_name = 'EleutherAI/gpt-j-6B'
-model_name = "/data2/qiaosb/memit/models/GPT-J_memit_10000_0"
-# model_name = "/data2/qiaosb/memit/models/GPT-NeoX_10000_10000_0"
+model_name = "/home/user/memit/models/GPT-J_memit"
 dataset_name = './multi_counterfact.json'
 # dataset_name = './multi_counterfact_ori.json'
 test_num = 10000
@@ -49,8 +48,6 @@ def construct_icl_examples(idx, demos):
     demo_ids = corpus_idx[idx]
     demo_ids = demo_ids[:len(order)]
     for demo_id, o in zip(demo_ids, order):
-        # print("ddddddddd",len(demos))
-        # print(demo_id)
         line = demos[demo_id - test_num]
         new_fact = line['requested_rewrite']['prompt'].format(line['requested_rewrite']['subject'])
         target_new = line['requested_rewrite']['target_new']['str']
@@ -64,7 +61,6 @@ def construct_icl_examples(idx, demos):
         elif o == 2:
             prompt = random.choice(line['neighborhood_prompts'])
             icl_examples.append(f'New Fact: {new_fact} {target_new}\nPrompt: {prompt} {target_true}\n\n')
-    # icl_examples.reverse()
     return icl_examples
 
 
@@ -79,16 +75,12 @@ def optimized_icl_examples(idx, demos):
 
         # copy
         # icl_examples.append(f'New Fact: {new_fact} {target_new}\nPrompt: {new_fact} {target_new}\n\n')
-        # icl_examples.append(f'Prompt: {new_fact} {target_new}\n\n')
         # update
         for prompt in (line['paraphrase_prompts']):
             icl_examples.append(f'New Fact: {new_fact} {target_new}\nPrompt: {prompt} {target_new}\n\n')
-            # icl_examples.append(f'Prompt: {prompt} {target_new}\n\n')
         # retain
         for prompt in (line['neighborhood_prompts']):
             icl_examples.append(f'New Fact: {new_fact} {target_new}\nPrompt: {prompt} {target_true}\n\n')
-            # icl_examples.append(f'Prompt: {prompt} {target_true}\n\n')
-    # random.shuffle(icl_examples)
     icl_examples.reverse()
     return icl_examples
 
@@ -100,8 +92,6 @@ def icl_lm_eval(model, tokenizer, icl_examples, targets, x):
         tgt_len = len(tokenizer.encode(' ' + target))
 
         max_len = 2047 - len(tokenizer.encode(f'{x} {target}'))
-        # print("-------------------------")
-        # print('type:' + f'{x} {target}')
 
         # ICL
         encodings = tokenizer(''.join(icl_examples) + f'{x} {target}', return_tensors='pt')
@@ -114,45 +104,10 @@ def icl_lm_eval(model, tokenizer, icl_examples, targets, x):
             en_codings = torch.cat([icl_encodings['input_ids'], prompt_encodings['input_ids']], dim=1)
             input_ids = en_codings.to(model.device)
 
-        # encodings = tokenizer(''.join(icl_examples) + f'{x} {target}. {x}', return_tensors='pt')
-        # if encodings['input_ids'].size(1) < 2048:
-        #     input_ids = encodings['input_ids'].to(device)
-        # else:    # overflow
-        #     print("overflow")
-        #     icl_encodings = tokenizer(''.join(icl_examples), return_tensors='pt', max_length=max_len, truncation=True)
-        #     prompt_encodings = tokenizer(' ' + f'{x} {target}. {x}', return_tensors='pt')
-        #     en_codings = torch.cat([icl_encodings['input_ids'], prompt_encodings['input_ids']], dim=1)
-        #     input_ids = en_codings.to(device)
-
-        # without ICL
-        # encodings = tokenizer(f'{x} {target}', return_tensors='pt')
-        # # encodings = tokenizer(f'{x} {target}. {x} ', return_tensors='pt')
-        # input_ids = encodings['input_ids'].to(device)
-
         target_ids = input_ids.clone().to(model.device)
         target_ids[:, :-tgt_len] = -100
         with torch.no_grad():
             outputs = model(input_ids, labels=target_ids)
-
-            ##################################################
-            # ids = model.generate(input_ids, max_new_tokens=20)  #
-            # sen = tokenizer.decode(ids[0])
-            # # sf = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            # # print(sf)
-            # # ids = torch.topk(sf,k=1,dim=-1)
-            # # predicted_indices = torch.argmax(sf, dim=-1)
-            # # print(predicted_indices.shape)
-            # # tokens = tokenizer.decode(predicted_indices[0])
-            # # print(tokens)
-            # with open('PIGEN_samples.txt', mode='a') as src:
-            #     src.write("-----------------" + type +' '+ target + '\n')
-            #     src.write("x_target: " + f'{x} {target}' + '\n' )
-            #     # src.write("out:" + tokens + '\n')
-            #     src.write("out: " + sen + '\n')
-            #     src.write("+++++++++++++++++\n")
-            # # print(sen)
-            ##################################################
-
             ppl = torch.exp(outputs.loss)
             ppls.append(ppl.item())
     return ppls
@@ -176,14 +131,13 @@ if __name__ == '__main__':
     print("loading model ...")
     print(model_name)
     #  load parameter updated model   (MEMIT, PMET, etc.)
-    model = GPTJForCausalLM.from_pretrained("/data2/qiaosb/memit_bak/models/GPT-J_memit_10000_0").to('cuda:0')
+    model = GPTJForCausalLM.from_pretrained("/home/user/memit/models/GPT-J_memit").to('cuda:0')
     # model = GPTJForCausalLM.from_pretrained("EleutherAI/gpt-j-6B",device_map='auto')
     # model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neox-20b",torch_dtype=torch.float16, device_map="cuda:0" )
 
     print("model loaded.")
 
     model.eval()
-    # model2.eval()
 
     print("loading tokenizer ...")
     tokenizer = GPT2TokenizerFast.from_pretrained('EleutherAI/gpt-j-6B')
@@ -258,9 +212,6 @@ if __name__ == '__main__':
         # icl_examples = []
         new_fact_p1 = lines[ret_facts[0]]
         new_fact_p2 = lines[ret_facts[1]]
-        # print(new_fact_p1)
-        # prompt_p1, target_p1 = new_fact_p1['requested_rewrite']['prompt'], new_fact_p1['requested_rewrite']['target_new']['str']
-        # prompt_p2, target_p2 = new_fact_p2['requested_rewrite']['prompt'], new_fact_p2['requested_rewrite']['target_new']['str']
         prompt_ps = [new_fact_p1['requested_rewrite']['prompt'], new_fact_p2['requested_rewrite']['prompt']]
         target_ps = [new_fact_p1['requested_rewrite']['target_new']['str'], new_fact_p2['requested_rewrite']['target_new']['str']]
         temp_icl_examples = icl_examples
@@ -281,32 +232,25 @@ if __name__ == '__main__':
                 break
         if es_flag==0:
             edit_ppls = icl_lm_eval(model, tokenizer, [], [target_new, target_true], f'{prompt}')
-        # edit_ppls = icl_lm_eval(model, tokenizer, icl_examples, [target_new, target_true], f'Prompt: {prompt}')
 
         edit_final_probs = [1 / edit_ppls[0], 1 / edit_ppls[1]]
         orig_total_cnt += 1
         if edit_final_probs[0] > edit_final_probs[1]:
             orig_success_cnt += 1
         orig_magnitude += edit_final_probs[0] - edit_final_probs[1]
-
         targets = [target_new, target_true]
-
 
         paraphrases = line['paraphrase_prompts']
         for pi,paraphrase in enumerate(paraphrases):
             ps_flag=0
             for sub in S:
                 if (sub + ' ' in paraphrase) or (sub + '\'' in paraphrase) or (sub + ',' in paraphrase) or (sub + '.' in paraphrase):
-                    # paraphrase_ppls = icl_lm_eval(model, tokenizer, icl_examples, [target_new, target_true], f'New Fact: {prompt} {target_new}\nPrompt: {paraphrase}')
                     paraphrase_ppls = icl_lm_eval(model, tokenizer, icl_ps[pi], [target_new, target_true], f'New Fact: {prompt_ps[pi]} {target_ps[pi]}\nPrompt: {paraphrase}')
                     ps_flag = 1
                     break
             if ps_flag == 0:
                 paraphrase_ppls = icl_lm_eval(model, tokenizer, [], [target_new, target_true],
                                             f'{paraphrase}')
-            # paraphrase_ppls = icl_lm_eval(model, tokenizer, icl_examples, [target_new, target_true], f'New Fact: {prompt} {target_new}\nPrompt: {paraphrase}')
-            # paraphrase_ppls = icl_lm_eval(model, tokenizer, icl_examples, [target_new, target_true],
-            #                               f'Prompt: {paraphrase}')
             paraphrase_final_probs = [1 / paraphrase_ppls[0], 1 / paraphrase_ppls[1]]
 
             if paraphrase_final_probs[0] > paraphrase_final_probs[1]:
@@ -324,7 +268,6 @@ if __name__ == '__main__':
                 target_ns = lines[ns_ret_facts[ni]]['requested_rewrite']['target_new']['str']
                 icl_ns.append(f'New Fact: {prompt_ns} {target_ns}\nPrompt: {prompt_ns} {target_ns}\n\n')
                 neighbor_ppls = icl_lm_eval(model, tokenizer, icl_ns, [target_true, target_new], f'New Fact: {prompt_ns} {target_ns}\nPrompt: {neighbor}')
-            # neighbor_ppls = icl_lm_eval(model, tokenizer, icl_examples, [target_true, target_new], f'Prompt: {neighbor}')
             neighbor_final_probs = [1 / neighbor_ppls[0], 1 / neighbor_ppls[1]]
 
             if neighbor_final_probs[0] > neighbor_final_probs[1]:
